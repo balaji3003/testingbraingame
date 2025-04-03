@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bird Flight Simulator</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"
+      rel="stylesheet" />
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        font-family: Arial, sans-serif;
+      }
+      #game-container {
+        position: fixed;
+        width: 100%;
+        height: 100%;
+        top: 0;
+        left: 0;
+      }
+      .ui-container {
+        position: fixed;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+        pointer-events: none; /* Allows clicks to pass through to canvas */
+      }
+      .ui-container h1 {
+        color: white;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        margin-top: 20px;
+        margin-bottom: 10px;
+      }
+      .ui-container button {
+        pointer-events: auto; /* Re-enable clicks for the button */
+        margin-bottom: 20px;
+      }
+      .instructions {
+        color: white;
+        background-color: rgba(0, 0, 0, 0.5);
+        padding: 10px 15px;
+        border-radius: 5px;
+        text-align: center;
+        max-width: 300px;
+        margin: 0 auto;
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="ui-container">
+      <h1>Bird Flight Simulator</h1>
+      <button id="startBtn" class="btn btn-primary">Start Flight</button>
+      <div class="instructions">
+        <p>Move your mouse up/down to control the bird's altitude</p>
+      </div>
+    </div>
+    <div id="game-container"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+      // Set up the Three.js scene
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(
+        75,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        1000
+      );
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(window.devicePixelRatio);
+      document
+        .getElementById("game-container")
+        .appendChild(renderer.domElement);
+
+      // Create a bird (using a cone for a simple bird shape)
+      const birdGeometry = new THREE.ConeGeometry(1, 2, 8);
+      const birdMaterial = new THREE.MeshPhongMaterial({
+        color: 0xffd700,
+        shininess: 100,
+      });
+      const bird = new THREE.Mesh(birdGeometry, birdMaterial);
+      bird.rotation.x = Math.PI / 2; // Rotate to face forward
+      scene.add(bird);
+
+      // Create the sky background
+      const skyGeometry = new THREE.SphereGeometry(500, 60, 40);
+      skyGeometry.scale(-1, 1, 1); // Invert the sphere to render inside
+      const skyMaterial = new THREE.MeshBasicMaterial({
+        color: 0x87ceeb,
+        side: THREE.BackSide,
+      });
+      const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+      scene.add(sky);
+
+      // Create the ground/ocean
+      const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
+      const groundMaterial = new THREE.MeshPhongMaterial({
+        color: 0x1e90ff,
+        side: THREE.DoubleSide,
+      });
+      const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = -20;
+      scene.add(ground);
+
+      // Add some clouds for visual interest
+      function createCloud() {
+        const cloud = new THREE.Group();
+        const cloudGeometry = new THREE.SphereGeometry(3, 16, 16);
+        const cloudMaterial = new THREE.MeshPhongMaterial({
+          color: 0xffffff,
+          transparent: true,
+          opacity: 0.8,
+        });
+
+        // Create cloud with multiple spheres
+        for (let i = 0; i < 4; i++) {
+          const sphere = new THREE.Mesh(cloudGeometry, cloudMaterial);
+          sphere.position.x = (Math.random() - 0.5) * 8;
+          sphere.position.y = (Math.random() - 0.5) * 4;
+          sphere.position.z = (Math.random() - 0.5) * 4;
+          sphere.scale.setScalar(0.7 + Math.random() * 0.5);
+          cloud.add(sphere);
+        }
+
+        // Position cloud randomly in the scene
+        cloud.position.set(
+          Math.random() * 200 - 100,
+          Math.random() * 50 + 20,
+          Math.random() * -100 - 50
+        );
+
+        return cloud;
+      }
+
+      // Add multiple clouds
+      const clouds = [];
+      for (let i = 0; i < 10; i++) {
+        const cloud = createCloud();
+        scene.add(cloud);
+        clouds.push(cloud);
+      }
+
+      // Add lighting
+      const ambientLight = new THREE.AmbientLight(0x404040);
+      scene.add(ambientLight);
+
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      directionalLight.position.set(1, 1, 1);
+      scene.add(directionalLight);
+
+      // Set initial camera position
+      camera.position.z = 50;
+      camera.position.y = 10;
+
+      // Bird movement variables
+      let birdPositionX = -window.innerWidth / 20; // Start at the left edge (responsive)
+      let birdPositionY = 0;
+      const birdSpeed = 0.2; // Slower horizontal movement
+      let animationId = null;
+      let mouseY = 0;
+
+      // Track mouse movement for bird control
+      document.addEventListener("mousemove", (event) => {
+        // Normalize mouse Y position to -1 (bottom) to 1 (top)
+        mouseY = (event.clientY / window.innerHeight) * 2 - 1;
+      });
+
+      // Handle window resize
+      function handleResize() {
+        // Update renderer and camera
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+
+        // Reset bird position to left edge
+        birdPositionX = -window.innerWidth / 20;
+      }
+
+      window.addEventListener("resize", handleResize);
+
+      // Animate the bird
+      function animate() {
+        animationId = requestAnimationFrame(animate);
+
+        // Move the bird horizontally at a slower pace
+        birdPositionX += birdSpeed;
+
+        // Reset position when it reaches the right edge (responsive)
+        if (birdPositionX > window.innerWidth / 20) {
+          birdPositionX = -window.innerWidth / 20;
+        }
+
+        // Set bird's vertical position based on mouse Y position
+        // Map mouseY (-1 to 1) to a reasonable flight range (e.g., -15 to 15)
+        birdPositionY = mouseY * 15;
+
+        // Update the bird's position
+        bird.position.x = birdPositionX;
+        bird.position.y = birdPositionY;
+
+        // Add slight wing flap animation
+        bird.rotation.z = Math.sin(Date.now() * 0.005) * 0.2;
+
+        // Rotate clouds slightly for movement effect
+        clouds.forEach((cloud) => {
+          cloud.rotation.y += 0.001;
+        });
+
+        // Render the scene
+        renderer.render(scene, camera);
+      }
+
+      // Start the simulation when the button is clicked
+      document.getElementById("startBtn").onclick = function () {
+        if (!animationId) {
+          animate();
+          this.textContent = "Flying...";
+          this.classList.remove("btn-primary");
+          this.classList.add("btn-success");
+        }
+      };
+
+      // Initial setup
+      handleResize();
+    </script>
+  </body>
+</html>
